@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube to HLS Stream Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .stop-btn {
+            background-color: #dc3545;
+        }
+        .stop-btn:hover {
+            background-color: #c82333;
+        }
+        video {
+            width: 100%;
+            max-width: 800px;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+        .status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .stream-info {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            border: 1px solid #e9ecef;
+        }
+        .stream-info h3 {
+            margin-top: 0;
+        }
+        .url-display {
+            word-break: break-all;
+            font-family: monospace;
+            background-color: #e9ecef;
+            padding: 5px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 YouTube to HLS Stream Test</h1>
+        <p>Test YouTube URL streaming conversion to HLS format</p>
+        
+        <div class="form-group">
+            <label for="youtubeUrl">YouTube URL:</label>
+            <input type="text" id="youtubeUrl" value="https://www.youtube.com/watch?v=dQw4w9WgXcQ" placeholder="Enter YouTube URL">
+        </div>
+        
+        <div class="form-group">
+            <label for="cctvId">Stream ID:</label>
+            <input type="text" id="cctvId" value="test_player_123" placeholder="Enter unique stream ID">
+        </div>
+        
+        <button id="startBtn" onclick="startStream()">🚀 Start Stream</button>
+        <button id="stopBtn" onclick="stopStream()" disabled class="stop-btn">🛑 Stop Stream</button>
+        
+        <div id="status"></div>
+        <div id="streamInfo" style="display: none;"></div>
+        
+        <video id="videoPlayer" controls style="display: none;">
+            Your browser does not support the video tag.
+        </video>
+    </div>
+
+    <script>
+        let currentStreamId = null;
+        let hls = null;
+        
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `status ${type}`;
+            statusDiv.innerHTML = message;
+        }
+        
+        function showStreamInfo(data) {
+            const infoDiv = document.getElementById('streamInfo');
+            infoDiv.style.display = 'block';
+            infoDiv.innerHTML = `
+                <h3>Stream Information</h3>
+                <p><strong>Stream ID:</strong> ${data.stream_id}</p>
+                <p><strong>YouTube URL:</strong> <div class="url-display">${data.youtube_url}</div></p>
+                <p><strong>HLS URL:</strong> <div class="url-display">${data.full_hls_url}</div></p>
+                <p><strong>Stream Type:</strong> ${data.stream_type}</p>
+            `;
+        }
+        
+        async function startStream() {
+            const youtubeUrl = document.getElementById('youtubeUrl').value;
+            const cctvId = document.getElementById('cctvId').value;
+            
+            if (!youtubeUrl || !cctvId) {
+                showStatus('Please enter both YouTube URL and Stream ID', 'error');
+                return;
+            }
+            
+            document.getElementById('startBtn').disabled = true;
+            showStatus('Starting stream conversion...', 'info');
+            
+            try {
+                const response = await fetch('/test_streaming_endpoint.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        youtube_url: youtubeUrl,
+                        cctv_id: cctvId
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentStreamId = data.stream_id;
+                    showStatus('✅ Stream started successfully! Initializing player...', 'success');
+                    showStreamInfo(data);
+                    
+                    // Wait a moment for stream to be ready
+                    setTimeout(() => {
+                        initializePlayer(data.full_hls_url);
+                    }, 3000);
+                    
+                    document.getElementById('stopBtn').disabled = false;
+                } else {
+                    showStatus(`❌ Failed to start stream: ${data.message}`, 'error');
+                    document.getElementById('startBtn').disabled = false;
+                }
+            } catch (error) {
+                showStatus(`❌ Error: ${error.message}`, 'error');
+                document.getElementById('startBtn').disabled = false;
+            }
+        }
+        
+        function initializePlayer(hlsUrl) {
+            const video = document.getElementById('videoPlayer');
+            video.style.display = 'block';
+            
+            if (Hls.isSupported()) {
+                if (hls) {
+                    hls.destroy();
+                }
+                
+                hls = new Hls({
+                    debug: false,
+                    enableWorker: true,
+                    lowLatencyMode: true
+                });
+                
+                hls.loadSource(hlsUrl);
+                hls.attachMedia(video);
+                
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    showStatus('✅ Stream ready! Playing video...', 'success');
+                    video.play().catch(e => {
+                        showStatus('⚠️ Autoplay blocked. Please click play button.', 'info');
+                    });
+                });
+                
+                hls.on(Hls.Events.ERROR, function(event, data) {
+                    if (data.fatal) {
+                        showStatus(`❌ HLS Error: ${data.type} - ${data.details}`, 'error');
+                    }
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = hlsUrl;
+                video.addEventListener('loadedmetadata', function() {
+                    showStatus('✅ Stream ready! Playing video...', 'success');
+                    video.play();
+                });
+            } else {
+                showStatus('❌ HLS not supported in this browser', 'error');
+            }
+        }
+        
+        async function stopStream() {
+            if (!currentStreamId) {
+                showStatus('No active stream to stop', 'error');
+                return;
+            }
+            
+            document.getElementById('stopBtn').disabled = true;
+            showStatus('Stopping stream...', 'info');
+            
+            try {
+                const response = await fetch('http://localhost:8010/api/stream/stop', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        streamId: currentStreamId
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatus('✅ Stream stopped successfully', 'success');
+                    
+                    // Clean up player
+                    if (hls) {
+                        hls.destroy();
+                        hls = null;
+                    }
+                    
+                    const video = document.getElementById('videoPlayer');
+                    video.style.display = 'none';
+                    video.src = '';
+                    
+                    document.getElementById('streamInfo').style.display = 'none';
+                    currentStreamId = null;
+                    
+                    document.getElementById('startBtn').disabled = false;
+                } else {
+                    showStatus(`❌ Failed to stop stream: ${data.message}`, 'error');
+                    document.getElementById('stopBtn').disabled = false;
+                }
+            } catch (error) {
+                showStatus(`❌ Error stopping stream: ${error.message}`, 'error');
+                document.getElementById('stopBtn').disabled = false;
+            }
+        }
+        
+        // Initialize
+        showStatus('Ready to start streaming. Enter a YouTube URL and click Start Stream.', 'info');
+    </script>
+</body>
+</html>
