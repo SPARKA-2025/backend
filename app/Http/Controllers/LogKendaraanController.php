@@ -371,6 +371,106 @@ class LogKendaraanController extends Controller
     }
 
     /**
+     * Create log kendaraan from SPARKA Integration Service
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     */
+    public function createFromIntegration(Request $request)
+    {
+        $this->validate($request, [
+            'plate_number' => 'required|string',
+            'action' => 'required|string|in:entry,exit',
+            'timestamp' => 'nullable|date',
+            'location' => 'nullable|string'
+        ]);
+
+        $plateNumber = $request->input('plate_number');
+        $action = $request->input('action');
+        $timestamp = $request->input('timestamp') ? Carbon::parse($request->input('timestamp')) : Carbon::now();
+        $location = $request->input('location', 'AI Detection');
+
+        try {
+            if ($action === 'entry') {
+                // Check if there's already an active entry for this plate
+                $existingEntry = LogKendaraan::where('plat_nomor', $plateNumber)
+                                            ->whereNotNull('capture_time')
+                                            ->whereNull('exit_time')
+                                            ->first();
+
+                if ($existingEntry) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Vehicle already has an active entry',
+                        'data' => null
+                    ], Response::HTTP_BAD_REQUEST);
+                }
+
+                // Create new entry
+                $logKendaraan = LogKendaraan::create([
+                    'plat_nomor' => $plateNumber,
+                    'vehicle' => 'Detected Vehicle',
+                    'capture_time' => $timestamp,
+                    'location' => $location,
+                    'exit_time' => null,
+                    'image' => '', // Default empty image
+                    'id_fakultas' => 1, // Default fakultas
+                    'id_blok' => 1 // Default blok
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Entry recorded successfully',
+                    'data' => [
+                        'id' => $logKendaraan->id,
+                        'plate_number' => $logKendaraan->plat_nomor,
+                        'action' => 'entry',
+                        'timestamp' => $logKendaraan->capture_time
+                    ]
+                ], Response::HTTP_CREATED);
+
+            } elseif ($action === 'exit') {
+                // Find active entry for this plate
+                $activeEntry = LogKendaraan::where('plat_nomor', $plateNumber)
+                                          ->whereNotNull('capture_time')
+                                          ->whereNull('exit_time')
+                                          ->first();
+
+                if (!$activeEntry) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'No active entry found for this vehicle',
+                        'data' => null
+                    ], Response::HTTP_BAD_REQUEST);
+                }
+
+                // Update exit time
+                $activeEntry->exit_time = $timestamp;
+                $activeEntry->save();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Exit recorded successfully',
+                    'data' => [
+                        'id' => $activeEntry->id,
+                        'plate_number' => $activeEntry->plat_nomor,
+                        'action' => 'exit',
+                        'entry_time' => $activeEntry->capture_time,
+                        'exit_time' => $activeEntry->exit_time
+                    ]
+                ], Response::HTTP_OK);
+            }
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to record parking action: ' . $e->getMessage(),
+                'data' => null
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
      * Remove the specified resource from storage.
      *
      * @param  \App\Models\LogKendaraan  $logKendaraan

@@ -329,6 +329,16 @@ $router->group(['prefix'=>'api/ai'], function() use ($router){
     });
 });
 
+$router->group(['prefix'=>'api'], function() use ($router){
+    // Check booking status by plate number
+    $router->get('booking/check/{plate_number}', 'ParkirController@checkBookingByPlate');
+});
+
+$router->group(['prefix'=>'api/parking'], function() use ($router){
+    // Update parking status
+    $router->post('update', 'LogKendaraanController@createFromIntegration');
+});
+
 // Public image routes (no authentication required)
 $router->group(['prefix'=>'api'], function() use ($router){
     // Image endpoints for displaying vehicle capture images

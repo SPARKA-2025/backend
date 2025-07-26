@@ -92,9 +92,9 @@ class ParkirController extends Controller
             return response()->json(['status' => 'error', 'pesan' => 'Slot parkir sudah dibooking atau terisi'], Response::HTTP_BAD_REQUEST);
         }
 
-        // Menentukan waktu booking selama 1 jam
+        // Menentukan waktu booking tanpa timeout untuk booking khusus
         $waktuBooking = Carbon::now();
-        $waktuBookingBerakhir = $waktuBooking->copy()->addHour();
+        $waktuBookingBerakhir = Carbon::parse('2099-12-31 23:59:59'); // Tanpa timeout untuk booking khusus
 
         // Ubah status slot parkir menjadi "Dibooking"
         $slotParkir->status = 'Dibooking';
@@ -965,6 +965,75 @@ class ParkirController extends Controller
                 'status' => 'error',
                 'message' => 'Failed to retrieve parking statistics',
                 'error' => $e->getMessage()
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Check booking status by plate number for SPARKA Integration Service
+     */
+    public function checkBookingByPlate($plate_number)
+    {
+        try {
+            $platNomor = strtoupper(trim($plate_number));
+            
+            // Check for active regular booking
+            $activeBooking = Parkir::where('plat_nomor', $platNomor)
+                ->where('waktu_booking_berakhir', '>', Carbon::now())
+                ->first();
+                
+            // Check for active special booking
+            $activeSpecialBooking = ParkirKhusus::where('plat_nomor', $platNomor)
+                ->where('waktu_booking_berakhir', '>', Carbon::now())
+                ->first();
+                
+            if ($activeBooking) {
+                return response()->json([
+                    'has_booking' => true,
+                    'booking_details' => [
+                        'plate_number' => $platNomor,
+                        'status' => 'active',
+                        'booking_id' => 'regular_' . $activeBooking->id,
+                        'booking_type' => 'regular',
+                        'slot_id' => $activeBooking->id_slot,
+                        'booking_time' => $activeBooking->waktu_booking,
+                        'booking_end_time' => $activeBooking->waktu_booking_berakhir
+                    ]
+                ]);
+            }
+            
+            if ($activeSpecialBooking) {
+                return response()->json([
+                    'has_booking' => true,
+                    'booking_details' => [
+                        'plate_number' => $platNomor,
+                        'status' => 'active',
+                        'booking_id' => 'special_' . $activeSpecialBooking->id,
+                        'booking_type' => 'special',
+                        'slot_id' => $activeSpecialBooking->id_slot,
+                        'booking_time' => $activeSpecialBooking->waktu_booking,
+                        'booking_end_time' => $activeSpecialBooking->waktu_booking_berakhir
+                    ]
+                ]);
+            }
+            
+            // No active booking found
+            return response()->json([
+                'has_booking' => false,
+                'booking_details' => null,
+                'message' => 'No active booking found for this plate number'
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error checking booking status', [
+                'plate_number' => $plate_number,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'has_booking' => false,
+                'booking_details' => null,
+                'error' => 'Failed to check booking status'
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
