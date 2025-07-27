@@ -1,5 +1,24 @@
 <?php
 
+/**
+ * ParkirController - Enhanced with Booking Logic Updates v2.1
+ * 
+ * Recent Changes (v2.2):
+ * 1. Regular bookings (bookingSlot) maintain 1-hour timeout for user biasa
+ * 2. Special bookings (bookingSlotKhusus) have no timeout (until 2099-12-31)
+ * 3. All bookings (regular and special) are completed after first successful entry
+ * 4. Enhanced handleVehicleEntry to mark all bookings as completed after entry
+ * 5. Improved logging for booking completion tracking
+ * 6. Grace period logic: 15 minutes for vehicles with recently completed bookings
+ * 7. Simplified logic: Only timeout duration differs between booking types
+ * 
+ * Booking Behavior:
+ * - User biasa: 1 jam timeout, auto-complete after entry
+ * - Booking khusus: No timeout, auto-complete after entry
+ * - Entry detection: Completes all booking types after first entry
+ * - Exit detection: Uses grace period for recently completed bookings
+ */
+
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
@@ -92,9 +111,9 @@ class ParkirController extends Controller
             return response()->json(['status' => 'error', 'pesan' => 'Slot parkir sudah dibooking atau terisi'], Response::HTTP_BAD_REQUEST);
         }
 
-        // Menentukan waktu booking tanpa timeout untuk booking khusus
+        // Menentukan waktu booking selama 1 jam untuk user biasa
         $waktuBooking = Carbon::now();
-        $waktuBookingBerakhir = Carbon::parse('2099-12-31 23:59:59'); // Tanpa timeout untuk booking khusus
+        $waktuBookingBerakhir = $waktuBooking->copy()->addHour();
 
         // Ubah status slot parkir menjadi "Dibooking"
         $slotParkir->status = 'Dibooking';
@@ -155,9 +174,9 @@ class ParkirController extends Controller
             return response()->json(['status' => 'error', 'pesan' => 'Slot parkir sudah dibooking atau terisi'], Response::HTTP_BAD_REQUEST);
         }
 
-        // Menentukan waktu booking selama 1 jam
+        // Menentukan waktu booking tanpa timeout untuk booking khusus
         $waktuBooking = Carbon::now();
-        $waktuBookingBerakhir = $waktuBooking->copy()->addHour();
+        $waktuBookingBerakhir = Carbon::parse('2099-12-31 23:59:59');
 
         // Ubah status slot parkir menjadi "Dibooking"
         $slotParkir->status = 'Dibooking';
@@ -540,6 +559,18 @@ class ParkirController extends Controller
                     $logKendaraan->exit_time = null; // Entry record, no exit time yet
                     $logKendaraan->save();
 
+                    // Mark booking as completed after successful entry (both regular and special)
+                    $bookingToUse->waktu_booking_berakhir = $detectionTime;
+                    $bookingToUse->save();
+                    
+                    $bookingType = $isSpecialParking ? 'special' : 'regular';
+                    \Log::info("{$bookingType} booking marked as completed after entry", [
+                        'plate' => $platNomor,
+                        'booking_id' => $bookingToUse->id,
+                        'booking_type' => $bookingType,
+                        'completion_time' => $detectionTime
+                    ]);
+
                     $statusMessage = $previousStatus === 'Kosong' ? 'booking expired but within grace period' : 'booking confirmed';
                     
                     \Log::info("Slot status updated to Terisi and LogKendaraan entry created", [
@@ -585,6 +616,18 @@ class ParkirController extends Controller
                             $logKendaraan->image = ''; // Default empty image
                             $logKendaraan->exit_time = null; // Entry record, no exit time yet
                             $logKendaraan->save();
+                            
+                            // Mark booking as completed after successful entry (both regular and special)
+                            $bookingToUse->waktu_booking_berakhir = $detectionTime;
+                            $bookingToUse->save();
+                            
+                            $bookingType = $isSpecialParking ? 'special' : 'regular';
+                            \Log::info("{$bookingType} booking marked as completed after entry (occupied slot)", [
+                                'plate' => $platNomor,
+                                'booking_id' => $bookingToUse->id,
+                                'booking_type' => $bookingType,
+                                'completion_time' => $detectionTime
+                            ]);
                             
                             \Log::info("LogKendaraan entry created for already occupied slot", [
                                 'plate' => $platNomor,
